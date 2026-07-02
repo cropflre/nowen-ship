@@ -1,0 +1,59 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nowen-release-hub-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nowen
+      POSTGRES_PASSWORD: nowen_local_dev
+      POSTGRES_DB: nowen_release_hub
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nowen"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    container_name: nowen-release-hub-server
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_URL: postgresql://nowen:nowen_local_dev@postgres:5432/nowen_release_hub
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      API_TOKEN: ${API_TOKEN:-nowen-local-dev-token}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./apps/server:/app/apps/server
+      - /app/apps/server/node_modules
+      - ./apps/server/prisma:/app/apps/server/prisma
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: nowen-release-hub-web
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_BASE_URL: http://localhost:3001/api
+    depends_on:
+      - server
+    volumes:
+      - ./apps/web:/app/apps/web
+      - /app/apps/web/node_modules
+
+volumes:
+  pgdata:
