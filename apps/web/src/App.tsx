@@ -8,6 +8,8 @@ import { ReleasePlanDetail } from "./pages/releases/ReleasePlanDetail";
 import { BuildsList } from "./pages/builds/BuildsList";
 import { BuildDetail } from "./pages/builds/BuildDetail";
 import { AuditLogs } from "./pages/audit-logs/AuditLogs";
+import { DeployTargets } from "./pages/deploy/DeployTargets";
+import { Deployments } from "./pages/deploy/Deployments";
 
 export default function App() {
   return (
@@ -21,6 +23,8 @@ export default function App() {
         <Route path="/releases/:id" element={<ReleasePlanDetail />} />
         <Route path="/builds" element={<BuildsList />} />
         <Route path="/builds/:id" element={<BuildDetail />} />
+        <Route path="/deploy-targets" element={<DeployTargets />} />
+        <Route path="/deployments" element={<Deployments />} />
         <Route path="/audit-logs" element={<AuditLogs />} />
       </Routes>
     </Layout>

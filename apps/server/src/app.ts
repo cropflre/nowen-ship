@@ -7,6 +7,7 @@ import { prisma } from "./db/client.js";
 import { projectRoutes } from "./routes/projects.js";
 import { buildRoutes } from "./routes/builds.js";
 import { releaseRoutes } from "./routes/releases.js";
+import { deployRoutes } from "./routes/deploy.js";
 
 export async function buildApp() {
   const app = Fastify({
@@ -35,6 +36,7 @@ export async function buildApp() {
   await app.register(projectRoutes, { prefix: "/api/projects" });
   await app.register(buildRoutes, { prefix: "/api/builds" });
   await app.register(releaseRoutes, { prefix: "/api/releases" });
+  await app.register(deployRoutes, { prefix: "/api/deploy" });
 
   // 404 handler
   app.setNotFoundHandler(async (request, reply) => {

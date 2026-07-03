@@ -4,6 +4,7 @@ import {
   FolderKanban,
   GitBranch,
   Cog,
+  Rocket,
   ScrollText,
 } from "lucide-react";
 
@@ -12,6 +13,8 @@ const navItems = [
   { to: "/projects", label: "项目管理", icon: FolderKanban },
   { to: "/releases", label: "发版计划", icon: GitBranch },
   { to: "/builds", label: "构建任务", icon: Cog },
+  { to: "/deploy-targets", label: "部署目标", icon: Rocket },
+  { to: "/deployments", label: "部署记录", icon: Rocket },
   { to: "/audit-logs", label: "审计日志", icon: ScrollText },
 ];
 

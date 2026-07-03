@@ -47,6 +47,7 @@ model ReleasePlan {
   project       Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
   releaseJobs   ReleaseJob[]
   githubRelease GithubRelease?
+  deployments   Deployment[]
 
   @@map("release_plans")
 }
@@ -140,7 +141,9 @@ model Deployment {
   deployTargetId String   @map("deploy_target_id")
   version        String
   commitSha      String?  @map("commit_sha")
-  status         String   @default("pending")
+  status         String   @default("pending") @map("status")
+  githubRunId    BigInt?  @unique @map("github_run_id")
+  githubRunUrl   String?  @map("github_run_url")
   startedAt      DateTime? @map("started_at")
   completedAt    DateTime? @map("completed_at")
   triggeredBy    String   @map("triggered_by")
