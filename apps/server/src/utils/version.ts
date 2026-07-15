@@ -75,7 +75,7 @@ export function bumpVersion(
 }
 
 export function isValidVersion(version: string): boolean {
-  return /^v?\d+\.\d+\.\d+(-[\w\.]+)?$/.test(version);
+  return /^v?\d+\.\d+\.\d+(-[\w.]+)?$/.test(version);
 }
 
 export function toTagName(version: string): string {
