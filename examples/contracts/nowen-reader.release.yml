@@ -1,0 +1,72 @@
+schemaVersion: 1
+project:
+  key: nowen-reader
+  name: Nowen Reader
+  type: go-react
+version:
+  source:
+    type: github_release
+  prefix: v
+  tagTemplate: "v{{version}}"
+channels:
+  binaries:
+    name: Go Binaries
+    kind: server
+    trigger:
+      type: tag_push
+      workflow: .github/workflows/build.yml
+    artifacts:
+      - pattern: "nowen-reader-*"
+        platform: server
+        architecture: all
+    publish:
+      mode: draft
+    order: 10
+  docker:
+    name: Multi-arch Docker
+    kind: docker
+    trigger:
+      type: workflow_dispatch
+      workflow: .github/workflows/docker.yml
+      ref: main
+    inputs:
+      publish:
+        type: boolean
+        label: Push image
+        default: true
+    dependsOn:
+      - binaries
+    artifacts:
+      - name: OCI image
+        pattern: "cropflre/nowen-reader:{{version}}"
+        platform: server
+        architecture: multi-arch
+        kind: container-image
+    publish:
+      mode: automatic
+    order: 20
+  production:
+    name: Production Deployment
+    kind: server
+    trigger:
+      type: workflow_dispatch
+      workflow: .github/workflows/deploy.yml
+      ref: main
+    inputs:
+      environment:
+        type: choice
+        label: Environment
+        options:
+          - staging
+          - production
+        default: staging
+        required: true
+    dependsOn:
+      - docker
+    publish:
+      mode: manual
+      approval: true
+    production:
+      environment: production
+      requiresApproval: true
+    order: 30
