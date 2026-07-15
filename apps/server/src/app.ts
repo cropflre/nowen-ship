@@ -2,12 +2,19 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import sensible from "@fastify/sensible";
 import { env, isDev } from "./config/env.js";
-import { logger } from "./utils/logger.js";
 import { prisma } from "./db/client.js";
 import { projectRoutes } from "./routes/projects.js";
 import { buildRoutes } from "./routes/builds.js";
 import { releaseRoutes } from "./routes/releases.js";
 import { deployRoutes } from "./routes/deploy.js";
+
+function livenessPayload() {
+  return {
+    status: "ok",
+    service: "nowen-ship-server",
+    timestamp: new Date().toISOString(),
+  };
+}
 
 export async function buildApp() {
   const app = Fastify({
@@ -19,7 +26,6 @@ export async function buildApp() {
     },
   });
 
-  // Register plugins
   await app.register(cors, {
     origin: isDev ? ["http://localhost:5173"] : [],
     credentials: true,
@@ -27,18 +33,34 @@ export async function buildApp() {
 
   await app.register(sensible);
 
-  // Health check
-  app.get("/api/health", async () => {
-    return { status: "ok", timestamp: new Date().toISOString() };
+  app.get("/api/health", async () => livenessPayload());
+  app.get("/api/health/live", async () => livenessPayload());
+
+  app.get("/api/health/ready", async (_request, reply) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      return {
+        status: "ready",
+        service: "nowen-ship-server",
+        database: "reachable",
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      app.log.error({ err: error }, "Database readiness check failed");
+      return reply.status(503).send({
+        status: "not_ready",
+        service: "nowen-ship-server",
+        database: "unreachable",
+        timestamp: new Date().toISOString(),
+      });
+    }
   });
 
-  // Register API routes
   await app.register(projectRoutes, { prefix: "/api/projects" });
   await app.register(buildRoutes, { prefix: "/api/builds" });
   await app.register(releaseRoutes, { prefix: "/api/releases" });
   await app.register(deployRoutes, { prefix: "/api/deploy" });
 
-  // 404 handler
   app.setNotFoundHandler(async (request, reply) => {
     reply.status(404).send({
       error: "Not Found",
@@ -46,13 +68,16 @@ export async function buildApp() {
     });
   });
 
-  // Error handler
   app.setErrorHandler(async (error, request, reply) => {
     app.log.error({ err: error, url: request.url }, "Request error");
     reply.status(error.statusCode ?? 500).send({
       error: error.name,
       message: error.message,
     });
+  });
+
+  app.addHook("onClose", async () => {
+    await prisma.$disconnect();
   });
 
   return app;
