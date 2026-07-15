@@ -37,7 +37,7 @@ export function ProjectForm({ project, onSuccess, onCancel }: Props) {
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
     if (!form.name) newErrors.name = "项目名称不能为空";
-    if (!form.repoFullName || !/^[\w\-\.]+\/[\w\-\.]+$/.test(form.repoFullName)) {
+    if (!form.repoFullName || !/^[\w.-]+\/[\w.-]+$/.test(form.repoFullName)) {
       newErrors.repoFullName = "格式必须为 owner/repo";
     }
     if (!form.workflowFile) newErrors.workflowFile = "Workflow 文件名不能为空";
@@ -91,7 +91,6 @@ export function ProjectForm({ project, onSuccess, onCancel }: Props) {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* 项目名称 */}
           <div>
             <label className="mb-1 block text-sm font-medium">
               项目名称 <span className="text-destructive">*</span>
@@ -108,7 +107,6 @@ export function ProjectForm({ project, onSuccess, onCancel }: Props) {
             )}
           </div>
 
-          {/* 仓库全名 */}
           <div>
             <label className="mb-1 block text-sm font-medium">
               GitHub 仓库 <span className="text-destructive">*</span>
@@ -125,7 +123,6 @@ export function ProjectForm({ project, onSuccess, onCancel }: Props) {
             )}
           </div>
 
-          {/* 默认分支 + 项目类型 */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="mb-1 block text-sm font-medium">默认分支</label>
@@ -154,7 +151,6 @@ export function ProjectForm({ project, onSuccess, onCancel }: Props) {
             </div>
           </div>
 
-          {/* Workflow 文件 */}
           <div>
             <label className="mb-1 block text-sm font-medium">
               Workflow 文件 <span className="text-destructive">*</span>
@@ -171,7 +167,6 @@ export function ProjectForm({ project, onSuccess, onCancel }: Props) {
             )}
           </div>
 
-          {/* 是否启用 */}
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -185,7 +180,6 @@ export function ProjectForm({ project, onSuccess, onCancel }: Props) {
             </label>
           </div>
 
-          {/* 按钮 */}
           <div className="flex justify-end gap-3 pt-2">
             <button
               type="button"
