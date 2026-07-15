@@ -1,0 +1,59 @@
+schemaVersion: 1
+project:
+  key: nowen-note
+  name: Nowen Note
+  type: electron
+version:
+  source:
+    type: json
+    file: package.json
+    path: version
+  prefix: v
+  tagTemplate: "v{{version}}"
+channels:
+  desktop:
+    name: Desktop Release
+    kind: desktop
+    trigger:
+      type: tag_push
+      workflow: .github/workflows/release.yml
+    artifacts:
+      - pattern: "*.exe"
+        platform: windows
+        architecture: x64
+      - pattern: "*.dmg"
+        platform: macos
+        architecture: universal
+      - pattern: "*.AppImage"
+        platform: linux
+        architecture: x64
+    publish:
+      mode: draft
+      requiredArtifacts: true
+    order: 10
+  ios:
+    name: iOS / TestFlight
+    kind: ios
+    trigger:
+      type: workflow_dispatch
+      workflow: .github/workflows/ios-release.yml
+      ref: main
+    inputs:
+      upload:
+        type: boolean
+        label: Upload to TestFlight
+        default: false
+    dependsOn:
+      - desktop
+    artifacts:
+      - pattern: "*.ipa"
+        platform: ios
+        architecture: arm64
+    publish:
+      mode: manual
+      approval: true
+    production:
+      environment: testflight
+      requiresApproval: true
+    optional: true
+    order: 20
