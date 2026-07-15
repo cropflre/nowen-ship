@@ -8,7 +8,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "start": "node dist/index.js",
-    "test": "tsx --test --test-concurrency=1 src/utils/version.test.ts src/app.test.ts src/domain/state-machine.test.ts src/domain/domain-model.test.ts",
+    "test": "tsx --test --test-concurrency=1 src/utils/version.test.ts src/app.test.ts src/domain/state-machine.test.ts src/domain/domain-model.test.ts src/contracts/release-contract.parser.test.ts src/services/release-contract.service.test.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
