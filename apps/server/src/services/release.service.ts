@@ -1,7 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { GitHubService } from "./github.service.js";
-import { bumpVersion, toTagName, parseVersion } from "../utils/version.js";
-import { prisma } from "../db/client.js";
+import { bumpVersion, toTagName } from "../utils/version.js";
 import { logger } from "../utils/logger.js";
 
 export class ReleaseService {
@@ -11,7 +10,7 @@ export class ReleaseService {
   ) {}
 
   /**
-   * 获取项目的当前版本号（优先读 package.json， fallback 到上次 release）
+   * 获取项目的当前版本号（优先读 package.json，fallback 到上次 release）
    */
   async getCurrentVersion(projectId: string): Promise<string> {
     const project = await this.prisma.project.findUnique({
@@ -21,25 +20,19 @@ export class ReleaseService {
 
     const [owner, repo] = project.repoFullName.split("/");
 
-    // 尝试从 package.json 读取
     const pkg = await this.github.getPackageJson(owner, repo, project.defaultBranch);
     if (pkg && typeof pkg === "object" && "version" in pkg) {
       return (pkg as { version: string }).version;
     }
 
-    // fallback：读上次 GitHub Release
     const latest = await this.github.getLatestRelease(owner, repo);
     if (latest) {
       return latest.tag_name.replace(/^v/, "");
     }
 
-    // 都没有，默认 0.0.0
     return "0.0.0";
   }
 
-  /**
-   * 计算目标版本号
-   */
   async calculateTargetVersion(
     projectId: string,
     releaseType: "patch" | "minor" | "major" | "prerelease",
@@ -49,9 +42,6 @@ export class ReleaseService {
     return bumpVersion(current, releaseType, prereleaseTag);
   }
 
-  /**
-   * 创建发版计划
-   */
   async createPlan(params: {
     projectId: string;
     releaseType: "patch" | "minor" | "major" | "prerelease";
@@ -67,12 +57,16 @@ export class ReleaseService {
     );
     const tagName = toTagName(targetVersion);
 
-    // 检查 tag 是否已存在
     const existing = await this.prisma.releasePlan.findUnique({
-      where: { tagName },
+      where: {
+        projectId_tagName: {
+          projectId: params.projectId,
+          tagName,
+        },
+      },
     });
     if (existing) {
-      throw new Error(`发版计划 ${tagName} 已存在`);
+      throw new Error(`项目内发版计划 ${tagName} 已存在`);
     }
 
     const plan = await this.prisma.releasePlan.create({
@@ -93,9 +87,6 @@ export class ReleaseService {
     return plan;
   }
 
-  /**
-   * 列出发版计划
-   */
   async listPlans(params: { projectId?: string; status?: string } = {}) {
     return this.prisma.releasePlan.findMany({
       where: {
@@ -107,9 +98,6 @@ export class ReleaseService {
     });
   }
 
-  /**
-   * 获取单个计划详情
-   */
   async getPlan(id: string) {
     const plan = await this.prisma.releasePlan.findUnique({
       where: { id },
@@ -123,9 +111,6 @@ export class ReleaseService {
     return plan;
   }
 
-  /**
-   * 创建 Git tag
-   */
   async createTag(planId: string, commitSha?: string): Promise<string> {
     const plan = await this.prisma.releasePlan.findUnique({
       where: { id: planId },
@@ -135,7 +120,6 @@ export class ReleaseService {
 
     const [owner, repo] = plan.project.repoFullName.split("/");
 
-    // 如果没有提供 sha，先获取分支最新 commit
     if (!commitSha) {
       const { data: refData } = await this.github["octokit"].rest.git.getRef({
         owner,
@@ -151,13 +135,9 @@ export class ReleaseService {
     });
 
     await this.github.createTag(owner, repo, plan.tagName, commitSha);
-
     return commitSha;
   }
 
-  /**
-   * 触发构建（关联发版计划）
-   */
   async triggerBuild(planId: string, ref?: string): Promise<string> {
     const plan = await this.prisma.releasePlan.findUnique({
       where: { id: planId },
@@ -165,15 +145,12 @@ export class ReleaseService {
     });
     if (!plan) throw new Error("发版计划不存在");
 
-    // 更新状态
     await this.prisma.releasePlan.update({
       where: { id: planId },
       data: { status: "building" },
     });
 
     const [owner, repo] = plan.project.repoFullName.split("/");
-
-    // 触发 workflow
     const { runId } = await this.github.triggerWorkflow({
       owner,
       repo,
@@ -185,10 +162,7 @@ export class ReleaseService {
       },
     });
 
-    // 等待一下
-    await new Promise((r) => setTimeout(r, 2000));
-
-    // 创建 release_jobs 记录
+    await new Promise((resolve) => setTimeout(resolve, 2000));
     const run = await this.github.getWorkflowRun(owner, repo, runId);
 
     const job = await this.prisma.releaseJob.create({
@@ -206,23 +180,15 @@ export class ReleaseService {
     return job.id;
   }
 
-  /**
-   * 创建 GitHub Release draft
-   */
   async createGitHubRelease(planId: string): Promise<{ id: number; htmlUrl: string }> {
     const plan = await this.prisma.releasePlan.findUnique({
       where: { id: planId },
-      include: { project: true },
+      include: { project: true, githubRelease: true },
     });
     if (!plan) throw new Error("发版计划不存在");
-
-    // 检查是否已有 release
-    if (plan.githubRelease) {
-      throw new Error("该计划已有关联的 GitHub Release");
-    }
+    if (plan.githubRelease) throw new Error("该计划已有关联的 GitHub Release");
 
     const [owner, repo] = plan.project.repoFullName.split("/");
-
     const { id, html_url } = await this.github.createRelease({
       owner,
       repo,
@@ -250,9 +216,6 @@ export class ReleaseService {
     return { id, htmlUrl: html_url };
   }
 
-  /**
-   * 发布 GitHub Release（取消 draft）
-   */
   async publishGitHubRelease(planId: string): Promise<void> {
     const plan = await this.prisma.releasePlan.findUnique({
       where: { id: planId },
@@ -263,7 +226,6 @@ export class ReleaseService {
     if (!plan.githubRelease.draft) throw new Error("该 Release 已发布");
 
     const [owner, repo] = plan.project.repoFullName.split("/");
-
     await this.github.publishRelease(owner, repo, plan.githubRelease.githubReleaseId);
 
     await this.prisma.githubRelease.update({
