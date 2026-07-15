@@ -88,12 +88,7 @@ jobs:
           corepack prepare pnpm@9.15.9 --activate
 
       - name: Install dependencies
-        run: |
-          if [ -f pnpm-lock.yaml ]; then
-            pnpm install --frozen-lockfile
-          else
-            pnpm install --no-frozen-lockfile
-          fi
+        run: pnpm install --frozen-lockfile
 
       - name: Generate Prisma client
         run: pnpm db:generate
@@ -142,3 +137,43 @@ jobs:
 
       - name: Build web image
         run: docker build --file apps/web/Dockerfile --tag nowen-ship-web:ci .
+
+  report:
+    name: Update SHIP-BASE-01 status
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: [checks, docker]
+    permissions:
+      issues: write
+    steps:
+      - name: Update issue comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- ship-base-ci -->';
+            const checks = '${{ needs.checks.result }}';
+            const docker = '${{ needs.docker.result }}';
+            const icon = (result) => result === 'success' ? '✅' : result === 'skipped' ? '⏭️' : '❌';
+            const body = `${marker}\n## SHIP-BASE-01 CI 状态\n\n- ${icon(checks)} 工程检查：**${checks}**\n- ${icon(docker)} Docker 镜像：**${docker}**\n- Commit：\`${context.sha}\`\n- [查看 Actions 运行](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})\n\n> 此评论由 CI 自动更新。`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 1,
+              per_page: 100,
+            });
+            const existing = comments.find((comment) => comment.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: 1,
+                body,
+              });
+            }
