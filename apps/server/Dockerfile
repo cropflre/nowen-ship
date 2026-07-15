@@ -2,12 +2,15 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+RUN apk add --no-cache openssl libc6-compat \
+  && corepack enable \
+  && corepack prepare pnpm@9.15.9 --activate
 
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/server/package.json apps/server/package.json
+COPY apps/web/package.json apps/web/package.json
 
-RUN pnpm install --filter nowen-release-hub-server... --frozen-lockfile
+RUN pnpm install --frozen-lockfile
 
 COPY apps/server apps/server
 
