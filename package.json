@@ -3,19 +3,28 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@9.15.9",
   "scripts": {
-    "dev": "pnpm -r dev",
+    "dev": "pnpm -r --parallel dev",
     "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
-    "db:studio": "pnpm --filter server db:studio",
-    "docker:up": "docker compose up -d",
+    "db:generate": "pnpm --filter nowen-release-hub-server prisma:generate",
+    "db:migrate": "pnpm --filter nowen-release-hub-server prisma:migrate",
+    "db:migrate:deploy": "pnpm --filter nowen-release-hub-server prisma:migrate:deploy",
+    "db:studio": "pnpm --filter nowen-release-hub-server prisma:studio",
+    "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f"
   },
   "devDependencies": {
-    "prettier": "^3.3.0",
-    "turbo": "^2.0.0"
+    "prettier": "^3.3.0"
   },
   "engines": {
     "node": ">=20.0.0"
