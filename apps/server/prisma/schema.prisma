@@ -7,6 +7,92 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum ChannelKind {
+  DESKTOP
+  ANDROID
+  IOS
+  DOCKER
+  SERVER
+  WEB
+  MIRROR
+  TESTFLIGHT
+  OTHER
+}
+
+enum TriggerType {
+  TAG_PUSH
+  WORKFLOW_DISPATCH
+  RELEASE_EVENT
+  SCRIPT_RUNNER
+}
+
+enum ReleaseTrainStatus {
+  DRAFT
+  PREFLIGHT_CHECKING
+  READY
+  RUNNING
+  VERIFYING
+  PUBLISHABLE
+  PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+enum ReleaseStatus {
+  DRAFT
+  PREFLIGHT_CHECKING
+  READY
+  RUNNING
+  VERIFYING
+  PUBLISHABLE
+  PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+enum ExecutionStatus {
+  PENDING
+  DISPATCHING
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  TIMED_OUT
+  SKIPPED
+}
+
+enum JobStatus {
+  PENDING
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  TIMED_OUT
+  SKIPPED
+}
+
+enum EnvironmentKind {
+  DEVELOPMENT
+  STAGING
+  PRODUCTION
+  CUSTOM
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum ApprovalType {
+  RELEASE
+  DEPLOYMENT
+  ROLLBACK
+}
+
 // ===== 项目 =====
 model Project {
   id                String        @id @default(cuid())
@@ -20,21 +106,29 @@ model Project {
   createdAt         DateTime      @default(now()) @map("created_at")
   updatedAt         DateTime      @updatedAt @map("updated_at")
 
+  // Legacy MVP relations. They remain during the compatibility migration.
   releasePlans   ReleasePlan[]
   releaseJobs    ReleaseJob[]
   githubReleases GithubRelease[]
   deployments    Deployment[]
   deployTargets  DeployTarget[]
 
+  // Control-plane domain relations.
+  releaseChannels ReleaseChannel[]
+  releases        Release[]
+  executions      Execution[]
+  environments    Environment[]
+  auditEvents     AuditEvent[]
+
   @@map("projects")
 }
 
-// ===== 发版计划 =====
+// ===== Legacy 发版计划（兼容层） =====
 model ReleasePlan {
   id              String      @id @default(cuid())
   projectId       String      @map("project_id")
   version         String
-  tagName         String      @unique @map("tag_name")
+  tagName         String      @map("tag_name")
   sourceBranch    String      @map("source_branch")
   sourceCommitSha String?     @map("source_commit_sha")
   changelog       String      @default("")
@@ -49,15 +143,18 @@ model ReleasePlan {
   githubRelease GithubRelease?
   deployments   Deployment[]
 
+  @@unique([projectId, version])
+  @@unique([projectId, tagName])
+  @@index([projectId, status, createdAt])
   @@map("release_plans")
 }
 
-// ===== 构建任务 =====
+// ===== Legacy 构建任务（兼容层） =====
 model ReleaseJob {
   id             String      @id @default(cuid())
-  releasePlanId  String?     @unique @map("release_plan_id")
+  releasePlanId  String?     @map("release_plan_id")
   projectId      String      @map("project_id")
-  githubRunId    BigInt      @unique @map("github_run_id")
+  githubRunId    BigInt      @map("github_run_id")
   githubRunUrl   String      @map("github_run_url")
   workflowFile   String      @map("workflow_file")
   status         String
@@ -72,10 +169,13 @@ model ReleaseJob {
   releasePlan ReleasePlan?    @relation(fields: [releasePlanId], references: [id], onDelete: Cascade)
   artifacts   ReleaseArtifact[]
 
+  @@unique([projectId, githubRunId])
+  @@index([releasePlanId, createdAt])
+  @@index([projectId, status, createdAt])
   @@map("release_jobs")
 }
 
-// ===== 构建产物 =====
+// ===== Legacy 构建产物（兼容层） =====
 model ReleaseArtifact {
   id               String   @id @default(cuid())
   releaseJobId     String   @map("release_job_id")
@@ -94,7 +194,7 @@ model ReleaseArtifact {
   @@map("release_artifacts")
 }
 
-// ===== GitHub Release =====
+// ===== Legacy GitHub Release（兼容层） =====
 model GithubRelease {
   id              String   @id @default(cuid())
   releasePlanId   String?  @unique @map("release_plan_id")
@@ -115,7 +215,199 @@ model GithubRelease {
   @@map("github_releases")
 }
 
-// ===== 部署目标 =====
+// ===== 发布通道 =====
+model ReleaseChannel {
+  id               String      @id @default(cuid())
+  projectId        String      @map("project_id")
+  key              String
+  name             String
+  kind             ChannelKind
+  triggerType      TriggerType @map("trigger_type")
+  workflowFile     String?     @map("workflow_file")
+  tagTemplate      String?     @map("tag_template")
+  refStrategy      String?     @map("ref_strategy")
+  inputsSchema     Json?       @map("inputs_schema")
+  artifactRules    Json?       @map("artifact_rules")
+  dependencies     Json?
+  publishPolicy    Json?       @map("publish_policy")
+  requiresApproval Boolean     @default(false) @map("requires_approval")
+  isActive         Boolean     @default(true) @map("is_active")
+  sortOrder        Int         @default(0) @map("sort_order")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  project    Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  executions Execution[]
+
+  @@unique([projectId, key])
+  @@index([projectId, isActive, sortOrder])
+  @@map("release_channels")
+}
+
+// ===== 跨项目发布批次 =====
+model ReleaseTrain {
+  id          String             @id @default(cuid())
+  name        String
+  description String?
+  status      ReleaseTrainStatus @default(DRAFT)
+  createdBy   String             @map("created_by")
+  startedAt   DateTime?          @map("started_at")
+  completedAt DateTime?          @map("completed_at")
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+
+  releases Release[]
+
+  @@index([status, createdAt])
+  @@map("release_trains")
+}
+
+// ===== 正式发布领域对象 =====
+model Release {
+  id              String        @id @default(cuid())
+  projectId       String        @map("project_id")
+  releaseTrainId  String?       @map("release_train_id")
+  version         String
+  tagName         String        @map("tag_name")
+  sourceBranch    String        @map("source_branch")
+  sourceCommitSha String?       @map("source_commit_sha")
+  changelog       String        @default("")
+  releaseType     String        @map("release_type")
+  status          ReleaseStatus @default(DRAFT)
+  createdBy       String        @map("created_by")
+  publishedAt     DateTime?     @map("published_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  releaseTrain ReleaseTrain? @relation(fields: [releaseTrainId], references: [id], onDelete: SetNull)
+  executions   Execution[]
+  deployments  Deployment[]
+  approvals    Approval[]
+  auditEvents  AuditEvent[]
+
+  @@unique([projectId, version])
+  @@unique([projectId, tagName])
+  @@index([releaseTrainId, status])
+  @@index([projectId, status, createdAt])
+  @@map("releases")
+}
+
+// ===== 通道执行 =====
+model Execution {
+  id              String          @id @default(cuid())
+  projectId       String          @map("project_id")
+  releaseId       String          @map("release_id")
+  channelId       String          @map("channel_id")
+  idempotencyKey  String          @map("idempotency_key")
+  attempt         Int             @default(1)
+  status          ExecutionStatus @default(PENDING)
+  conclusion      String?
+  githubRunId     BigInt?         @map("github_run_id")
+  githubRunUrl    String?         @map("github_run_url")
+  workflowFile    String?         @map("workflow_file")
+  ref             String?
+  headSha         String?         @map("head_sha")
+  errorCode       String?         @map("error_code")
+  errorMessage    String?         @map("error_message")
+  rawPayload      Json?           @map("raw_payload")
+  queuedAt        DateTime?       @map("queued_at")
+  startedAt       DateTime?       @map("started_at")
+  completedAt     DateTime?       @map("completed_at")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  release     Release        @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  channel     ReleaseChannel @relation(fields: [channelId], references: [id], onDelete: Restrict)
+  jobs        ExecutionJob[]
+  artifacts   Artifact[]
+  deployments Deployment[]
+  auditEvents AuditEvent[]
+
+  @@unique([releaseId, channelId, attempt])
+  @@unique([projectId, githubRunId])
+  @@unique([projectId, idempotencyKey])
+  @@index([releaseId, status, createdAt])
+  @@index([channelId, status, createdAt])
+  @@map("executions")
+}
+
+// ===== GitHub Actions Job / Matrix Job =====
+model ExecutionJob {
+  id           String    @id @default(cuid())
+  executionId  String    @map("execution_id")
+  githubJobId  BigInt?   @map("github_job_id")
+  name         String
+  matrixKey    String?   @map("matrix_key")
+  runnerName   String?   @map("runner_name")
+  status       JobStatus @default(PENDING)
+  conclusion   String?
+  startedAt    DateTime? @map("started_at")
+  completedAt  DateTime? @map("completed_at")
+  rawPayload   Json?     @map("raw_payload")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  execution Execution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@unique([executionId, githubJobId])
+  @@index([executionId, status])
+  @@map("execution_jobs")
+}
+
+// ===== 标准化产物 =====
+model Artifact {
+  id                  String   @id @default(cuid())
+  executionId         String   @map("execution_id")
+  githubArtifactId    BigInt?  @map("github_artifact_id")
+  name                String
+  fileName            String?  @map("file_name")
+  kind                String?
+  platform            String?
+  architecture        String?
+  sizeBytes           BigInt?  @map("size_bytes")
+  sha256              String?
+  signatureStatus     String?  @map("signature_status")
+  notarizationStatus  String?  @map("notarization_status")
+  downloadUrl         String?  @map("download_url")
+  expiresAt           DateTime? @map("expires_at")
+  metadata            Json?
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  execution Execution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@unique([executionId, githubArtifactId])
+  @@index([executionId, platform, architecture])
+  @@index([sha256])
+  @@map("artifacts")
+}
+
+// ===== 环境 =====
+model Environment {
+  id                String          @id @default(cuid())
+  projectId         String          @map("project_id")
+  key               String
+  name              String
+  kind              EnvironmentKind
+  protectionRules   Json?           @map("protection_rules")
+  healthCheckConfig Json?           @map("health_check_config")
+  isProduction      Boolean         @default(false) @map("is_production")
+  isActive          Boolean         @default(true) @map("is_active")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  deployments Deployment[]
+  approvals   Approval[]
+
+  @@unique([projectId, key])
+  @@index([projectId, kind, isActive])
+  @@map("environments")
+}
+
+// ===== Legacy 部署目标（兼容层） =====
 model DeployTarget {
   id          String      @id @default(cuid())
   projectId   String      @map("project_id")
@@ -135,29 +427,124 @@ model DeployTarget {
 
 // ===== 部署记录 =====
 model Deployment {
-  id             String   @id @default(cuid())
-  projectId      String   @map("project_id")
-  releasePlanId  String?  @map("release_plan_id")
-  deployTargetId String   @map("deploy_target_id")
-  version        String
-  commitSha      String?  @map("commit_sha")
-  status         String   @default("pending") @map("status")
-  githubRunId    BigInt?  @unique @map("github_run_id")
-  githubRunUrl   String?  @map("github_run_url")
-  startedAt      DateTime? @map("started_at")
-  completedAt    DateTime? @map("completed_at")
-  triggeredBy    String   @map("triggered_by")
-  logs           String?
-  createdAt      DateTime @default(now()) @map("created_at")
+  id                   String   @id @default(cuid())
+  projectId            String   @map("project_id")
+  releasePlanId        String?  @map("release_plan_id")
+  releaseId            String?  @map("release_id")
+  executionId          String?  @map("execution_id")
+  environmentId        String?  @map("environment_id")
+  deployTargetId       String   @map("deploy_target_id")
+  version              String
+  commitSha            String?  @map("commit_sha")
+  immutableRef         String?  @map("immutable_ref")
+  imageDigest          String?  @map("image_digest")
+  status               String   @default("pending") @map("status")
+  healthStatus         String?  @map("health_status")
+  failureReason        String?  @map("failure_reason")
+  githubRunId          BigInt?  @map("github_run_id")
+  githubRunUrl         String?  @map("github_run_url")
+  rollbackOfId         String?  @map("rollback_of_id")
+  startedAt            DateTime? @map("started_at")
+  completedAt          DateTime? @map("completed_at")
+  triggeredBy          String   @map("triggered_by")
+  logs                 String?
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
 
   project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  releasePlan  ReleasePlan?   @relation(fields: [releasePlanId], references: [id], onDelete: SetNull)
+  releasePlan  ReleasePlan?  @relation(fields: [releasePlanId], references: [id], onDelete: SetNull)
+  release      Release?      @relation(fields: [releaseId], references: [id], onDelete: SetNull)
+  execution    Execution?    @relation(fields: [executionId], references: [id], onDelete: SetNull)
+  environment  Environment?  @relation(fields: [environmentId], references: [id], onDelete: SetNull)
   deployTarget DeployTarget  @relation(fields: [deployTargetId], references: [id], onDelete: Cascade)
+  rollbackOf   Deployment?   @relation("DeploymentRollback", fields: [rollbackOfId], references: [id], onDelete: SetNull)
+  rollbacks    Deployment[]  @relation("DeploymentRollback")
+  approvals    Approval[]
+  auditEvents  AuditEvent[]
 
+  @@unique([projectId, githubRunId])
+  @@index([releaseId, status, createdAt])
+  @@index([environmentId, status, createdAt])
+  @@index([rollbackOfId])
   @@map("deployments")
 }
 
-// ===== 审计日志 =====
+// ===== 审批 =====
+model Approval {
+  id            String         @id @default(cuid())
+  type          ApprovalType
+  status        ApprovalStatus @default(PENDING)
+  releaseId     String?        @map("release_id")
+  deploymentId  String?        @map("deployment_id")
+  environmentId String?        @map("environment_id")
+  requestedBy   String         @map("requested_by")
+  decidedBy     String?        @map("decided_by")
+  reason        String?
+  requestedAt   DateTime       @default(now()) @map("requested_at")
+  decidedAt     DateTime?      @map("decided_at")
+  expiresAt     DateTime?      @map("expires_at")
+  metadata      Json?
+
+  release     Release?     @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  deployment  Deployment?  @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  environment Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+
+  @@index([status, requestedAt])
+  @@index([releaseId, type, status])
+  @@index([deploymentId, type, status])
+  @@map("approvals")
+}
+
+// ===== Webhook 去重与回放 =====
+model WebhookDelivery {
+  id             String   @id @default(cuid())
+  deliveryId     String   @unique @map("delivery_id")
+  eventName      String   @map("event_name")
+  action         String?
+  installationId BigInt?  @map("installation_id")
+  repositoryId   BigInt?  @map("repository_id")
+  signatureValid Boolean  @map("signature_valid")
+  status         String   @default("received")
+  attempts       Int      @default(0)
+  payload        Json
+  errorMessage   String?  @map("error_message")
+  receivedAt     DateTime @default(now()) @map("received_at")
+  processedAt    DateTime? @map("processed_at")
+
+  @@index([eventName, status, receivedAt])
+  @@index([repositoryId, receivedAt])
+  @@map("webhook_deliveries")
+}
+
+// ===== 新审计事件 =====
+model AuditEvent {
+  id           String   @id @default(cuid())
+  actor        String
+  action       String
+  targetType   String   @map("target_type")
+  targetId     String   @map("target_id")
+  projectId    String?  @map("project_id")
+  releaseId    String?  @map("release_id")
+  executionId  String?  @map("execution_id")
+  deploymentId String?  @map("deployment_id")
+  result       String
+  detail       Json?
+  ip           String?
+  userAgent    String?  @map("user_agent")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  project    Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  release    Release?    @relation(fields: [releaseId], references: [id], onDelete: SetNull)
+  execution  Execution?  @relation(fields: [executionId], references: [id], onDelete: SetNull)
+  deployment Deployment? @relation(fields: [deploymentId], references: [id], onDelete: SetNull)
+
+  @@index([actor, createdAt])
+  @@index([targetType, targetId, createdAt])
+  @@index([projectId, createdAt])
+  @@map("audit_events")
+}
+
+// ===== Legacy 审计日志（兼容层） =====
 model AuditLog {
   id         String   @id @default(cuid())
   actor      String
