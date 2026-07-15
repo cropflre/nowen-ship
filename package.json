@@ -18,6 +18,7 @@
     "db:generate": "pnpm --filter nowen-release-hub-server prisma:generate",
     "db:migrate": "pnpm --filter nowen-release-hub-server prisma:migrate",
     "db:migrate:deploy": "pnpm --filter nowen-release-hub-server prisma:migrate:deploy",
+    "db:seed": "pnpm --filter nowen-release-hub-server prisma:seed",
     "db:studio": "pnpm --filter nowen-release-hub-server prisma:studio",
     "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose down",
