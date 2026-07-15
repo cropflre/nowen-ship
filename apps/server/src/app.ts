@@ -8,6 +8,7 @@ import { buildRoutes } from "./routes/builds.js";
 import { releaseRoutes } from "./routes/releases.js";
 import { deployRoutes } from "./routes/deploy.js";
 import { domainRoutes } from "./routes/domain.js";
+import { contractRoutes } from "./routes/contracts.js";
 
 function livenessPayload() {
   return {
@@ -62,6 +63,7 @@ export async function buildApp() {
   await app.register(releaseRoutes, { prefix: "/api/releases" });
   await app.register(deployRoutes, { prefix: "/api/deploy" });
   await app.register(domainRoutes, { prefix: "/api/domain" });
+  await app.register(contractRoutes, { prefix: "/api/contracts" });
 
   app.setNotFoundHandler(async (request, reply) => {
     reply.status(404).send({
