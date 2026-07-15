@@ -172,15 +172,61 @@ jobs:
     name: Build Docker images
     runs-on: ubuntu-latest
     needs: checks
+    permissions:
+      contents: read
+      issues: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Build server image
-        run: docker build --file apps/server/Dockerfile --tag nowen-ship-server:ci .
+        id: server-image
+        continue-on-error: true
+        run: docker build --file apps/server/Dockerfile --tag nowen-ship-server:ci . 2>&1 | tee /tmp/docker-server.log
 
       - name: Build web image
-        run: docker build --file apps/web/Dockerfile --tag nowen-ship-web:ci .
+        id: web-image
+        continue-on-error: true
+        run: docker build --file apps/web/Dockerfile --tag nowen-ship-web:ci . 2>&1 | tee /tmp/docker-web.log
+
+      - name: Report Docker failure details
+        if: (steps.server-image.outcome != 'success' || steps.web-image.outcome != 'success') && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- ship-base-docker-failure -->';
+            const paths = ['/tmp/docker-server.log', '/tmp/docker-web.log'];
+            const sections = paths
+              .filter((path) => fs.existsSync(path))
+              .map((path) => `### ${path.split('/').pop()}\n\n\`\`\`text\n${fs.readFileSync(path, 'utf8').slice(-12000)}\n\`\`\``);
+            const body = `${marker}\n## SHIP-BASE-01 Docker 失败详情\n\nCommit：\`${context.sha}\`\n\n${sections.join('\n\n')}`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 1,
+              per_page: 100,
+            });
+            const existing = comments.find((comment) => comment.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: 1,
+                body,
+              });
+            }
+
+      - name: Enforce Docker build result
+        if: steps.server-image.outcome != 'success' || steps.web-image.outcome != 'success'
+        run: exit 1
 
   report:
     name: Update SHIP-BASE-01 status
