@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const repoFullNameRegex = /^[\w\-\.]+\/[\w\-\.]+$/;
+export const repoFullNameRegex = /^[\w.-]+\/[\w.-]+$/;
 
 export const createProjectSchema = z.object({
   name: z.string().min(1, "项目名称不能为空").max(100),
