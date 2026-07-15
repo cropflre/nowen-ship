@@ -1,0 +1,62 @@
+schemaVersion: 1
+project:
+  key: nowen-video
+  name: Nowen Video
+  type: tauri-go
+version:
+  source:
+    type: json
+    file: src-tauri/tauri.conf.json
+    path: version
+  prefix: v
+  tagTemplate: "v{{version}}"
+channels:
+  desktop:
+    name: Desktop Release
+    kind: desktop
+    trigger:
+      type: workflow_dispatch
+      workflow: .github/workflows/release-desktop.yml
+      ref: main
+    inputs:
+      target:
+        type: choice
+        label: Target platform
+        options:
+          - windows
+          - macos
+          - linux
+        default: windows
+        required: true
+    artifacts:
+      - pattern: "*.exe"
+        platform: windows
+        architecture: x64
+      - pattern: "*.msi"
+        platform: windows
+        architecture: x64
+      - pattern: "*.sig"
+        platform: all
+        architecture: all
+        kind: updater-signature
+    publish:
+      mode: draft
+      requiredArtifacts: true
+    order: 10
+  android-ci:
+    name: Android Validation
+    kind: android
+    trigger:
+      type: workflow_dispatch
+      workflow: .github/workflows/android-v2.yml
+      ref: main
+    artifacts:
+      - pattern: "*-debug.apk"
+        platform: android
+        architecture: arm64
+        required: false
+    publish:
+      mode: manual
+      requiredArtifacts: false
+    optional: true
+    order: 20
