@@ -1,0 +1,84 @@
+import Fastify from "fastify";
+import cors from "@fastify/cors";
+import sensible from "@fastify/sensible";
+import { env, isDev } from "./config/env.js";
+import { prisma } from "./db/client.js";
+import { projectRoutes } from "./routes/projects.js";
+import { buildRoutes } from "./routes/builds.js";
+import { releaseRoutes } from "./routes/releases.js";
+import { deployRoutes } from "./routes/deploy.js";
+
+function livenessPayload() {
+  return {
+    status: "ok",
+    service: "nowen-ship-server",
+    timestamp: new Date().toISOString(),
+  };
+}
+
+export async function buildApp() {
+  const app = Fastify({
+    logger: {
+      level: env.LOG_LEVEL,
+      transport: isDev
+        ? { target: "pino-pretty", options: { colorize: true } }
+        : undefined,
+    },
+  });
+
+  await app.register(cors, {
+    origin: isDev ? ["http://localhost:5173"] : [],
+    credentials: true,
+  });
+
+  await app.register(sensible);
+
+  app.get("/api/health", async () => livenessPayload());
+  app.get("/api/health/live", async () => livenessPayload());
+
+  app.get("/api/health/ready", async (_request, reply) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      return {
+        status: "ready",
+        service: "nowen-ship-server",
+        database: "reachable",
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      app.log.error({ err: error }, "Database readiness check failed");
+      return reply.status(503).send({
+        status: "not_ready",
+        service: "nowen-ship-server",
+        database: "unreachable",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
+  await app.register(projectRoutes, { prefix: "/api/projects" });
+  await app.register(buildRoutes, { prefix: "/api/builds" });
+  await app.register(releaseRoutes, { prefix: "/api/releases" });
+  await app.register(deployRoutes, { prefix: "/api/deploy" });
+
+  app.setNotFoundHandler(async (request, reply) => {
+    reply.status(404).send({
+      error: "Not Found",
+      message: `Cannot ${request.method} ${request.url}`,
+    });
+  });
+
+  app.setErrorHandler(async (error, request, reply) => {
+    app.log.error({ err: error, url: request.url }, "Request error");
+    reply.status(error.statusCode ?? 500).send({
+      error: error.name,
+      message: error.message,
+    });
+  });
+
+  app.addHook("onClose", async () => {
+    await prisma.$disconnect();
+  });
+
+  return app;
+}
