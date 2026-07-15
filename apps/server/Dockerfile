@@ -4,10 +4,10 @@ WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
-COPY package.json pnpm-workspace.yaml ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/server/package.json apps/server/package.json
 
-RUN pnpm install --filter nowen-release-hub-server... --no-frozen-lockfile
+RUN pnpm install --filter nowen-release-hub-server... --frozen-lockfile
 
 COPY apps/server apps/server
 
